@@ -17,7 +17,13 @@ ProtocolPacket::ProtocolPacket(PacketType t,uint32_t seq, char data_in[] , uint3
 
 }
 
-ProtocolPacket::ProtocolPacket(PacketType t,uint32_t seq, std::vector<char> d ) 
+ProtocolPacket::ProtocolPacket(PacketType t,uint32_t seq, std::string d ) 
+    : type(t) , seqnum(seq) , data(d.begin(),d.end()) {
+
+}
+
+
+ProtocolPacket::ProtocolPacket(PacketType t,uint32_t seq, std::vector<uint8_t> d ) 
     : type(t) , seqnum(seq) , data(d) {
 
 }
@@ -34,6 +40,10 @@ Protocol::Protocol() {
     this->timeoutInterval = this->pingInterval * 10;
     this->lastSendAttempt = 0;
     this->sendAttemptInterval = 10;
+}
+
+ProtoState Protocol::getState() const {
+    return state;
 }
 
 std::vector<ProtocolPacket> Protocol::timerEvent(uint64_t now) {
@@ -70,10 +80,10 @@ std::vector<ProtocolPacket> Protocol::timerEvent(uint64_t now) {
 }
 
 
-std::pair<std::vector<ProtocolPacket>,std::vector<char> > 
+std::pair<std::vector<ProtocolPacket>,std::vector<uint8_t> > 
 Protocol::packetEvent(ProtocolPacket & packet,uint64_t now,bool wantData) {
     
-    std::pair<std::vector<ProtocolPacket>,std::vector<char> > ret;
+    std::pair<std::vector<ProtocolPacket>,std::vector<uint8_t> > ret;
     
     if (this->outgoingDataPacket) {
         if (packet.type == TYPE_ACK) {
@@ -89,7 +99,7 @@ Protocol::packetEvent(ProtocolPacket & packet,uint64_t now,bool wantData) {
         ret.first.push_back(ProtocolPacket(TYPE_ACK,packet.seqnum));
         if (packet.seqnum == this->expectedDataSeqnum) {
             this->expectedDataSeqnum += 1;
-            for(std::vector<char>::iterator it = packet.data.begin(); it != packet.data.end() ; it++) {
+            for(std::vector<uint8_t>::iterator it = packet.data.begin(); it != packet.data.end() ; it++) {
                 ret.second.push_back(*it);
             }
                 
@@ -132,7 +142,7 @@ bool Protocol::readyForData() const {
 }
 
 
-std::vector<ProtocolPacket> Protocol::sendData(std::vector<char>  data, uint64_t now) {
+std::vector<ProtocolPacket> Protocol::sendData(std::vector<uint8_t>  data, uint64_t now) {
     std::vector<ProtocolPacket> ret;
     
     if (! this->readyForData()) {
@@ -148,7 +158,7 @@ std::vector<ProtocolPacket> Protocol::sendData(std::vector<char>  data, uint64_t
 }
 
 std::vector<ProtocolPacket> Protocol::sendData(const char * s, uint64_t now) {
-    std::vector<char> data(s,s+strlen(s));
+    std::vector<uint8_t> data(s,s+strlen(s));
     return sendData(data,now);
 }
 

@@ -1,4 +1,5 @@
 #include "protocol.h"
+#include "packets.h"
 #include "base64.h"
 
 #include <iostream>
@@ -161,7 +162,7 @@ int testSendData(){
     p.state = STATE_CONNECTED;
     p.seqnum = 1337;
     ASSERT(p.readyForData());
-    std::vector<char> emptydata;
+    std::vector<uint8_t> emptydata;
     std::vector<ProtocolPacket> out = p.sendData(emptydata,5);
     ASSERT(out.size() == 1);
     ASSERT(out[0].seqnum == 1337);
@@ -176,7 +177,7 @@ int testDataResending() {
     p.seqnum = 1337;
     p.pingInterval = 9000; // suppress any pings
     ASSERT(p.readyForData() == true);
-    std::vector<char> emptydata;
+    std::vector<uint8_t> emptydata;
     std::vector<ProtocolPacket> out = p.sendData(emptydata,0);
     ASSERT(out.size() == 1);
     ASSERT(out[0].seqnum == 1337);
@@ -333,7 +334,7 @@ int testRecoverLost() {
         
         // drop some more packets by not accepting data arbitrarily
         for (std::vector<ProtocolPacket>::iterator it = fora.begin() ; it != fora.end() ; it++ ) {
-            std::pair<std::vector<ProtocolPacket>,std::vector<char> > eventResult;
+            std::pair<std::vector<ProtocolPacket>,std::vector<uint8_t> > eventResult;
             eventResult = a.packetEvent(*it,t,true);
             out = eventResult.first;
             std::string gotData(eventResult.second.begin(),eventResult.second.end());
@@ -343,7 +344,7 @@ int testRecoverLost() {
         }
         fora.clear();
         for (std::vector<ProtocolPacket>::iterator it = forb.begin() ; it != forb.end() ; it++ ) {
-            std::pair<std::vector<ProtocolPacket>,std::vector<char> > eventResult;
+            std::pair<std::vector<ProtocolPacket>,std::vector<uint8_t> > eventResult;
             eventResult = b.packetEvent(*it,t,true);
             out = eventResult.first;
             std::string gotData(eventResult.second.begin(),eventResult.second.end());
@@ -377,16 +378,137 @@ int testRecoverLost() {
 }
 
 
+int testConnectTransport() {
+        
+    Protocol a;
+    Protocol b;
+    PacketBuilder pba;
+    PacketBuilder pbb;
+    
+    std::string fora_raw;
+    std::string forb_raw;
+    
+    uint64_t t = 0;
+    a.listen();
+    std::vector<ProtocolPacket> fora = b.connect(t);
+    for (std::vector<ProtocolPacket>::iterator it = fora.begin() ; it != fora.end() ; it++ ) {
+        fora_raw += encodePacket_s(*it);
+    }
+    std::vector<ProtocolPacket> forb;
+    
+    
+    std::vector<ProtocolPacket> out;
+    
+    std::set<PacketType> packetTypes;
+    
+    for( int i = 0;  i < 1000 ; i++) {
+        fora = pba.addData(fora_raw);
+        for (std::vector<ProtocolPacket>::iterator it = fora.begin() ; it != fora.end() ; it++ ) {
+            packetTypes.insert(it->type);
+            out = a.packetEvent(*it,t).first;
+            forb_raw = "";
+            for (std::vector<ProtocolPacket>::iterator it = out.begin() ; it != out.end() ; it++ ) {
+                forb_raw += encodePacket_s(*it);
+            }
+        }
+        fora.clear();
+        forb = pbb.addData(forb_raw);
+        for (std::vector<ProtocolPacket>::iterator it = forb.begin() ; it != forb.end() ; it++ ) {
+            packetTypes.insert(it->type);
+            out = b.packetEvent(*it,t).first;
+            fora_raw = "";
+            for (std::vector<ProtocolPacket>::iterator it = out.begin() ; it != out.end() ; it++ ) {
+                fora_raw += encodePacket_s(*it);
+            }
+        }
+        forb.clear();
+        
+        out = a.timerEvent(t);
+        for (std::vector<ProtocolPacket>::iterator it = out.begin() ; it != out.end() ; it++ ) {
+            forb_raw += encodePacket_s(*it);
+        }
+        out = b.timerEvent(t);
+        for (std::vector<ProtocolPacket>::iterator it = out.begin() ; it != out.end() ; it++ ) {
+            forb_raw += encodePacket_s(*it);
+        }
+        
+        t += 1;
+    }
+    
+    ASSERT(a.state == STATE_CONNECTED);
+    ASSERT(b.state == STATE_CONNECTED);
+    
+    ASSERT(packetTypes.find(TYPE_CON) != packetTypes.end());
+    ASSERT(packetTypes.find(TYPE_CONACK) != packetTypes.end());
+    ASSERT(packetTypes.find(TYPE_PING) != packetTypes.end());
+    
+    for ( int i = 0; i < 10000 ; i++) {
+        a.timerEvent(t);
+        b.timerEvent(t);
+        t += 1;
+    }
+    ASSERT(a.state == STATE_UNINIT);
+    ASSERT(b.state == STATE_UNINIT);
+    
+    b.connect(t);
+    ASSERT(b.state == STATE_CONNECTING);
+    b.timerEvent(t);
+    ASSERT(b.state == STATE_CONNECTING);
+    for(int i = 0; i < 10000 ; i++) {
+        b.timerEvent(t);
+        t += 1;
+    }
+    ASSERT(b.state == STATE_UNINIT);
+    return 0;
+}
+
+
 int testBase64() {
     ASSERT(b64encode("any") == std::string("YW55"));
     ASSERT(b64encode("anyany") == std::string("YW55YW55"));
     ASSERT(b64encode("a") == std::string("YQ=="));
     ASSERT(b64encode("aa") == std::string("YWE="));
     ASSERT(b64encode("aaa") == std::string("YWFh"));
-    std::cout << b64encode("aaaa") << std::endl;
     ASSERT(b64encode("aaaa") == std::string("YWFhYQ=="));
     ASSERT(b64encode("aaaaa") == std::string("YWFhYWE="));
-    return 1;
+    
+    ASSERT(std::string("any") == b64decode_s("YW55"));
+    ASSERT(std::string("anyany") == b64decode_s("YW55YW55"));
+    ASSERT(std::string("a") == b64decode_s("YQ=="));
+    ASSERT(std::string("aa") == b64decode_s("YWE="));
+    ASSERT(std::string("aaa") == b64decode_s("YWFh"));
+    ASSERT(std::string("aaaa") == b64decode_s("YWFhYQ=="));
+    ASSERT(std::string("aaaaa") == b64decode_s("YWFhYWE="));
+    
+    ASSERT(std::string("any") == b64decode_s("YW55\x5"));
+    
+    
+    return 0;
+}
+
+
+int testPacketBuilder() {
+    PacketBuilder pb;
+    std::vector<ProtocolPacket> packets;
+    std::vector<uint8_t> encoded;
+    
+    ASSERT(pb.addData("foobar").size() == 0);
+    ASSERT(pb.addData("foobar").size() == 0);
+    ASSERT(pb.addData("foobar").size() == 0);
+    packets = pb.addData("\nbar\ndata\n");
+    ASSERT(packets.size() == 0);
+    
+    pb = PacketBuilder();
+    
+    
+    
+    encoded = encodePacket(ProtocolPacket(TYPE_DATA,1337,"foobar"));
+    
+    packets = pb.addData(encoded);
+    ASSERT(packets.size() == 1);
+    
+    
+    return 0;
 }
 
 int main (int argc, char const* argv[]) {
@@ -403,7 +525,10 @@ int main (int argc, char const* argv[]) {
     TEST(testConnect);
     TEST(testRecoverLost);
     
+    TEST(testConnectTransport);
+    
     TEST(testBase64);
+    TEST(testPacketBuilder);
     
     std::cout << "Passed " << (totalTests - failedTests) << "/" << totalTests << std::endl;
     return failedTests ? 1 : 0;

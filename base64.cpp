@@ -13,15 +13,14 @@ static inline bool is_base64(BYTE c) {
 
 std::string b64encode(const std::vector<BYTE> & buff) {
   std::string ret;
-  unsigned int bufLen = buff.size();
   int i = 0;
   int j = 0;
   BYTE char_array_3[3];
   BYTE char_array_4[4];
   
-  std::vector<BYTE>::iterator buffiter;
+  std::vector<BYTE>::const_iterator buffiter = buff.begin();
 
-  while (bufLen--) {
+  while (buffiter != buff.end()) {
     char_array_3[i++] = *(buffiter++);
     if (i == 3) {
       char_array_4[0] = (char_array_3[0] & 0xfc) >> 2;
@@ -55,12 +54,26 @@ std::string b64encode(const std::vector<BYTE> & buff) {
   return ret;
 }
 
-std::string b64encode(std::string buff) {
+std::string b64encode(const std::string & buff) {
     std::vector<BYTE> vbuff(buff.begin(),buff.end());
     return b64encode(vbuff);
 }
 
+std::vector<BYTE> b64encode_v(const std::vector<BYTE> & vbuff) {
+    std::string ret = b64encode(vbuff);
+    return std::vector<BYTE>(ret.begin(),ret.end());
+}
+
+std::string b64decode_s(const std::string & encoded_string) {
+    std::vector<BYTE> ret = b64decode(encoded_string);
+    return std::string(ret.begin(),ret.end());
+}
+
 std::vector<BYTE> b64decode(const std::string & encoded_string) {
+    return b64decode(std::vector<BYTE>(encoded_string.begin(),encoded_string.end()));
+}
+
+std::vector<BYTE> b64decode(const std::vector<BYTE> & encoded_string) {
   int in_len = encoded_string.size();
   int i = 0;
   int j = 0;

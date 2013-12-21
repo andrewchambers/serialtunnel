@@ -1,3 +1,4 @@
+#pragma once
 #include <stdint.h>
 #include <tr1/memory>
 #include <string>
@@ -25,10 +26,10 @@ class ProtocolPacket {
     public:
         PacketType type;
         uint32_t seqnum;
-        std::vector<char> data;
-        std::string asEncodedString() const;
+        std::vector<uint8_t> data;
         ProtocolPacket(PacketType t,uint32_t seqnum, char data[], uint32_t n );
-        ProtocolPacket(PacketType t,uint32_t seqnum, std::vector<char> data );
+        ProtocolPacket(PacketType t,uint32_t seqnum, std::string d );
+        ProtocolPacket(PacketType t,uint32_t seqnum, std::vector<uint8_t> data );
         ProtocolPacket(PacketType t,uint32_t seqnum);
         ProtocolPacket(PacketType t);
 
@@ -39,12 +40,13 @@ class Protocol {
     public: 
         Protocol();
         std::vector<ProtocolPacket> timerEvent(uint64_t time);
-        std::pair<std::vector<ProtocolPacket>,std::vector<char> > packetEvent(ProtocolPacket & pPacket,uint64_t time, bool wantData = false);
-        std::vector<ProtocolPacket> sendData(std::vector<char>  data, uint64_t time);
+        std::pair<std::vector<ProtocolPacket>,std::vector<uint8_t> > packetEvent(ProtocolPacket & pPacket,uint64_t time, bool wantData = false);
+        std::vector<ProtocolPacket> sendData(std::vector<uint8_t>  data, uint64_t time);
         std::vector<ProtocolPacket> sendData(const char * c, uint64_t time);
         std::vector<ProtocolPacket> connect(uint64_t time);
         void listen();
         bool readyForData() const;
+        ProtoState getState() const;
         
         
         
