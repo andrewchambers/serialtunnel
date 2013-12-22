@@ -98,6 +98,7 @@ Protocol::_packetEvent(ProtocolPacket & packet,uint64_t now,bool wantData) {
         }
     }
     
+    
     if(wantData  && this->state == STATE_CONNECTED && packet.type == TYPE_DATA && packet.seqnum <= this->expectedDataSeqnum) {
         ret.first.push_back(ProtocolPacket(TYPE_ACK,packet.seqnum));
         if (packet.seqnum == this->expectedDataSeqnum) {
@@ -152,7 +153,7 @@ std::vector<ProtocolPacket> Protocol::_sendData(std::vector<uint8_t>  data, uint
         std::cerr << "FATAL BUG: _sendData:" << __FILE__ << ":" << __LINE__ << std::endl;
         exit(1);
     }
-        
+    
     this->outgoingDataPacket = std::tr1::shared_ptr<ProtocolPacket>(new ProtocolPacket(TYPE_DATA,this->seqnum,data));
     this->lastSendAttempt = now;
     ret.push_back(*(this->outgoingDataPacket));

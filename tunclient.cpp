@@ -1,5 +1,6 @@
 #include <string>
 #include <unistd.h>
+#include <fcntl.h>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
@@ -127,6 +128,7 @@ void subexec(const char *cmdexec,int * childpid, int * childin,int * childout) {
         char ** cmdline;
         cmdline = cmdline_split(cmdexec);
         execv(cmdline[0],cmdline);
+        std::cerr << "error starting command " << cmdline[0] << std::endl;
         exit(1);
         
 	    /* do child stuff */
@@ -155,12 +157,7 @@ uint64_t getNow() {
     }
     
     return (ts.tv_sec * 1000) + (ts.tv_nsec / 1000000);
-    
-    
 }
-
-
-
 
 
 void proxy_forever(Protocol & p, std::vector<uint8_t> & initialProtoData ,int protoin,int protoout,int datain, int dataout) {
@@ -182,9 +179,12 @@ void proxy_forever(Protocol & p, std::vector<uint8_t> & initialProtoData ,int pr
     
     uint8_t  buff[4096];
     
+    
     for (;;) {
         fd_set readfds;
         fd_set writefds;
+        fd_set errfds;
+        
         int r, n_r,n_w;
         now = getNow();
         if (p.getState() == STATE_UNINIT) {
@@ -194,11 +194,11 @@ void proxy_forever(Protocol & p, std::vector<uint8_t> & initialProtoData ,int pr
 
         FD_ZERO(&readfds);
         FD_ZERO(&writefds);
+        FD_ZERO(&errfds);
         
         int doDataIn = p.readyForData();
         int doBufferedOut = bufferedData.size() > 0;
         int doBufferedProtoOut = bufferedProtocolData.size() > 0;
-        
         
         FD_SET(protoin, &readfds);
         
@@ -214,12 +214,17 @@ void proxy_forever(Protocol & p, std::vector<uint8_t> & initialProtoData ,int pr
             FD_SET(dataout,&writefds);
         }
         
+        FD_SET(datain,&errfds);
+        FD_SET(dataout,&errfds);
+        FD_SET(protoin,&errfds);
+        FD_SET(protoout,&errfds);
+        
         struct timeval tv;
         
         tv.tv_sec  = 0;
         tv.tv_usec = 1000; 
         
-        r = select(maxfd + 1, &readfds, &writefds, NULL, &tv);
+        r = select(maxfd + 1, &readfds, &writefds, &errfds, &tv);
         if (r == -1) {
             break;
         }
@@ -227,6 +232,7 @@ void proxy_forever(Protocol & p, std::vector<uint8_t> & initialProtoData ,int pr
         
         if(doDataIn) {
             if (FD_ISSET(datain, &readfds)) {
+                
                 if(!p.readyForData()) {
                     std::cerr << "BUG: bad assertion. not ready for data." << std::endl;
                     exit(1);
@@ -251,15 +257,17 @@ void proxy_forever(Protocol & p, std::vector<uint8_t> & initialProtoData ,int pr
             
             std::pair<std::vector<uint8_t>,std::vector<uint8_t> > eventRet;
             
-            eventRet = p.dataEvent(out,now);
+            eventRet = p.dataEvent(out,now,true);
             
             bufferedProtocolData.insert(bufferedProtocolData.end(),eventRet.first.begin(),eventRet.first.end());
-            bufferedData.insert(bufferedData.end(),eventRet.second.begin(),eventRet.second.end());
+            
+            if(eventRet.second.size()) {
+                bufferedData.insert(bufferedData.end(),eventRet.second.begin(),eventRet.second.end());
+            }
         }
     
         if(doBufferedOut) {
             if (FD_ISSET(dataout, &writefds)) {
-                
                 if(!bufferedData.size()) {
                         std::cerr << "BUG: bad assertion. not for sending buffered data." << std::endl;
                         exit(1);
@@ -270,7 +278,6 @@ void proxy_forever(Protocol & p, std::vector<uint8_t> & initialProtoData ,int pr
                 if(n_w <= 0) {
                     break;
                 }
-                
                 //inefficient due to vector realloc but w.e. , our cpu is faster than data link
                 bufferedData.erase(bufferedData.begin(),bufferedData.begin()+n_w);
                 
@@ -280,10 +287,10 @@ void proxy_forever(Protocol & p, std::vector<uint8_t> & initialProtoData ,int pr
         if(doBufferedProtoOut) {
             if (FD_ISSET(protoout, &writefds)) {
                 if(!bufferedProtocolData.size()) {
-                        std::cerr << "BUG: bad assertion. not for sending protocol buffered data." << std::endl;
-                        exit(1);
+                    std::cerr << "BUG: bad assertion. not for sending protocol buffered data." << std::endl;
+                    exit(1);
                 }
-            
+                
                 n_w = write(protoout,&bufferedProtocolData.front(),bufferedProtocolData.size());
                 
                 if(n_w <= 0) {
@@ -292,16 +299,21 @@ void proxy_forever(Protocol & p, std::vector<uint8_t> & initialProtoData ,int pr
                 
                 //inefficient due to vector realloc but w.e. , our cpu is faster than data link
                 bufferedProtocolData.erase(bufferedProtocolData.begin(),bufferedProtocolData.begin()+n_w);
-                
-                
-                
             }
+        }
+        
+        if( FD_ISSET(datain,&errfds)
+            || FD_ISSET(dataout,&errfds)
+            || FD_ISSET(protoin,&errfds)
+            || FD_ISSET(protoout,&errfds) ) {
+            std::cerr << "Closing - fd error\n";
+            break;
         }
         
         out = p.timerEvent(now);
         bufferedProtocolData.insert(bufferedProtocolData.end(),out.begin(),out.end());
-        
     }
+    std::cerr << "closing connection\n";
     close(protoout);
     close(protoin);
     
@@ -363,7 +375,7 @@ main(int argc, char *argv[]) {
             if(p.getState() != STATE_LISTENING) {
                 std::cerr << "Connection established\n";
                 subexec(subcommand.c_str(),&childpid,&childin,&childout);
-                proxy_forever(p,out,STDIN_FILENO,STDOUT_FILENO,childin,childout);
+                proxy_forever(p,out,STDIN_FILENO,STDOUT_FILENO,childout,childin);
                 return 0;
             }
             
