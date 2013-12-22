@@ -8,7 +8,6 @@
 #include <time.h>
 
 #include "protocol.h"
-#include "packets.h"
 
 
 
@@ -147,28 +146,6 @@ static int max(int a, int b) {
     return b;
 }
 
-//returns 0 on success
-static int write_loop(int fd, uint8_t *buf, unsigned int size)
-{
-    uint8_t  *p;
-    int n;
-    unsigned int sent = 0;
-
-    p = buf;
-    while (sent < size) {
-        n = write(fd, p, size - (sent));
-        if (n == -1) {
-            break;
-        }
-        sent += n;
-        p += n;
-    }
-    if (sent == size) {
-        return 0;
-    }
-    return 1;
-}
-
 uint64_t getNow() {
     struct timespec ts;
     
@@ -182,91 +159,154 @@ uint64_t getNow() {
     
 }
 
-void proxy_forever(int childin, int childout) {
+
+
+
+
+void proxy_forever(Protocol & p, std::vector<uint8_t> & initialProtoData ,int protoin,int protoout,int datain, int dataout) {
     
-    int maxfd = STDIN_FILENO;
+    int maxfd = datain;
     
-    maxfd = max(STDIN_FILENO,maxfd);
-    maxfd = max(childout,maxfd);
-    
-    Protocol p;
-    PacketBuilder pb;
-    
-    std::vector<ProtocolPacket> packets;
-    std::vector<uint8_t> data;
+    maxfd = max(datain,maxfd);
+    maxfd = max(dataout,maxfd);
+    maxfd = max(protoout,maxfd);
+    maxfd = max(protoin,maxfd);
     
     int64_t now = getNow();
-    packets = p.connect(now);
-    for(std::vector<ProtocolPacket>::iterator it = packets.begin() ; it != packets.end() ; it++) {
-        std::vector<uint8_t> encoded = encodePacket(*it);
-        data.insert(data.begin(),encoded.begin(),encoded.end());
-    }
+    
+    std::vector<uint8_t> out;
+    std::vector<uint8_t> bufferedProtocolData;
+    std::vector<uint8_t> bufferedData;
+    
+    bufferedProtocolData = initialProtoData;
     
     uint8_t  buff[4096];
     
     for (;;) {
-        fd_set fds;
-        int r, n_r;
+        fd_set readfds;
+        fd_set writefds;
+        int r, n_r,n_w;
         now = getNow();
         if (p.getState() == STATE_UNINIT) {
+            std::cerr << "Connection terminated." << std::endl;
             break;
         }
 
-        FD_ZERO(&fds);
+        FD_ZERO(&readfds);
+        FD_ZERO(&writefds);
         
-        if(p.readyForData()) {
-            FD_SET(STDIN_FILENO, &fds);
+        int doDataIn = p.readyForData();
+        int doBufferedOut = bufferedData.size() > 0;
+        int doBufferedProtoOut = bufferedProtocolData.size() > 0;
+        
+        
+        FD_SET(protoin, &readfds);
+        
+        if(doDataIn) {
+            FD_SET(datain, &readfds);
         }
         
-        FD_SET(childout, &fds);
+        if(doBufferedProtoOut) {
+            FD_SET(protoout,&writefds);
+        }
+        
+        if(doBufferedOut) {
+            FD_SET(dataout,&writefds);
+        }
         
         struct timeval tv;
         
         tv.tv_sec  = 0;
         tv.tv_usec = 1000; 
         
-        r = select(maxfd + 1, &fds, NULL, NULL, &tv);
+        r = select(maxfd + 1, &readfds, &writefds, NULL, &tv);
         if (r == -1) {
             break;
         }
         
         
-        if (FD_ISSET(STDIN_FILENO, &fds)) {
-            n_r = read(STDIN_FILENO, buff, sizeof(buff));
-            if (n_r <= 0) {
-                break;
+        if(doDataIn) {
+            if (FD_ISSET(datain, &readfds)) {
+                if(!p.readyForData()) {
+                    std::cerr << "BUG: bad assertion. not ready for data." << std::endl;
+                    exit(1);
+                }
+                n_r = read(datain, buff, sizeof(buff));
+                if (n_r <= 0) {
+                    break;
+                }
+                
+                out = p.sendData(std::vector<uint8_t>(buff,buff+n_r),now);
+                bufferedProtocolData.insert(bufferedProtocolData.end(),out.begin(),out.end());
             }
         }
         
-        if(write_loop(childin, &data.front(), data.size()) != 0) {
-            break;
-        }
-        
-        data.clear();
-        
-        if (FD_ISSET(childout, &fds)) {
-            n_r = read(childout, buff, sizeof(buff));
+        if (FD_ISSET(protoin, &readfds)) {
+            n_r = read(protoin, buff, sizeof(buff));
             if (n_r <= 0) {
                 break;
             }
             
-            packets = pb.addData(buff,n_r);
-            std::pair<std::vector<ProtocolPacket>,std::vector<uint8_t> > reply;
-            for(std::vector<ProtocolPacket>::iterator it = packets.begin() ; it != packets.end() ; it++) {
-                reply = p.packetEvent(*it,now,true);
-                std::vector<uint8_t> reply_raw = encodePackets(reply.first);
-                data.insert(data.end(),reply_raw.begin(),reply_raw.end());
-            }
-            if (reply.second.size()) {
-                if(write_loop(STDOUT_FILENO, &reply.second.front(), reply.second.size()) != 0) {
+            out = std::vector<uint8_t>(buff,buff+n_r);
+            
+            std::pair<std::vector<uint8_t>,std::vector<uint8_t> > eventRet;
+            
+            eventRet = p.dataEvent(out,now);
+            
+            bufferedProtocolData.insert(bufferedProtocolData.end(),eventRet.first.begin(),eventRet.first.end());
+            bufferedData.insert(bufferedData.end(),eventRet.second.begin(),eventRet.second.end());
+        }
+    
+        if(doBufferedOut) {
+            if (FD_ISSET(dataout, &writefds)) {
+                
+                if(!bufferedData.size()) {
+                        std::cerr << "BUG: bad assertion. not for sending buffered data." << std::endl;
+                        exit(1);
+                }
+                
+                n_w = write(dataout,&bufferedData.front(),bufferedData.size());
+                
+                if(n_w <= 0) {
                     break;
                 }
+                
+                //inefficient due to vector realloc but w.e. , our cpu is faster than data link
+                bufferedData.erase(bufferedData.begin(),bufferedData.begin()+n_w);
+                
             }
         }
+        
+        if(doBufferedProtoOut) {
+            if (FD_ISSET(protoout, &writefds)) {
+                if(!bufferedProtocolData.size()) {
+                        std::cerr << "BUG: bad assertion. not for sending protocol buffered data." << std::endl;
+                        exit(1);
+                }
+            
+                n_w = write(protoout,&bufferedProtocolData.front(),bufferedProtocolData.size());
+                
+                if(n_w <= 0) {
+                    break;
+                }
+                
+                //inefficient due to vector realloc but w.e. , our cpu is faster than data link
+                bufferedProtocolData.erase(bufferedProtocolData.begin(),bufferedProtocolData.begin()+n_w);
+                
+                
+                
+            }
+        }
+        
+        out = p.timerEvent(now);
+        bufferedProtocolData.insert(bufferedProtocolData.end(),out.begin(),out.end());
+        
     }
+    close(protoout);
+    close(protoin);
     
-    close(childin);
-    close(childout);
+    close(datain);
+    close(dataout);
     
     exit(0);
 }
@@ -278,11 +318,15 @@ main(int argc, char *argv[]) {
     std::string subcommand;
     
     int opt;
+    int server = 0;
 
-    while ((opt = getopt(argc, argv, "c:")) != -1) {
+    while ((opt = getopt(argc, argv, "sc:")) != -1) {
         switch (opt) {
         case 'c':
             subcommand = optarg;
+            break;
+        case 's':
+            server = 1;
             break;
         default: /* '?' */
             std::cerr << "Bad arguments." << std::endl;
@@ -293,9 +337,38 @@ main(int argc, char *argv[]) {
     
     
     int childpid,childin,childout;
-    subexec(subcommand.c_str(),&childpid,&childin,&childout);
-    proxy_forever(childin,childout);
     
+    Protocol p;
     
+    if(!server) {
+        subexec(subcommand.c_str(),&childpid,&childin,&childout);
+        std::vector<uint8_t> initVec;
+        initVec = p.connect(getNow());
+        proxy_forever(p,initVec,childout,childin,STDIN_FILENO,STDOUT_FILENO);
+    } else {
+        int n_r;
+        uint8_t buff[4096];
+        p.listen();
+        std::cerr << "listening for connection.\n";
+        while(1) {
+            n_r = read(STDIN_FILENO,buff,sizeof(buff));
+            if(n_r <= 0) {
+                std::cerr << "std in abruptly closed" << std::endl;
+                exit(1);
+            }
+            std::vector<uint8_t> out(buff,buff+n_r);
+            
+            out = p.dataEvent(out,getNow()).first;
+            
+            if(p.getState() != STATE_LISTENING) {
+                std::cerr << "Connection established\n";
+                subexec(subcommand.c_str(),&childpid,&childin,&childout);
+                proxy_forever(p,out,STDIN_FILENO,STDOUT_FILENO,childin,childout);
+                return 0;
+            }
+            
+        }
+        
+    }
     return 0;
 }

@@ -1,5 +1,4 @@
 #include "protocol.h"
-#include "packets.h"
 #include "base64.h"
 
 #include <iostream>
@@ -63,9 +62,9 @@ int testTimeout() {
     #define T(A,B) \
         p = Protocol();\
         p.state = A;\
-        p.timerEvent(p.lastKeepAlive + p.timeoutInterval);\
+        p._timerEvent(p.lastKeepAlive + p.timeoutInterval);\
         ASSERT(p.state == A);\
-        p.timerEvent(p.lastKeepAlive + p.timeoutInterval + 1);\
+        p._timerEvent(p.lastKeepAlive + p.timeoutInterval + 1);\
         ASSERT(p.state == B);
     
     T(STATE_LISTENING,STATE_LISTENING);
@@ -86,10 +85,10 @@ int testPinging() {
     
     #define T(STATE) \
         p.state = STATE;\
-        out = p.timerEvent(p.pingInterval);\
+        out = p._timerEvent(p.pingInterval);\
         ASSERT(out.size() == 0);\
         ASSERT(p.lastPingSendTime == 0);\
-        out = p.timerEvent(p.pingInterval + 1);\
+        out = p._timerEvent(p.pingInterval + 1);\
         if (STATE == STATE_CONNECTED) { \
             ASSERT(out.size() == 1);\
             ASSERT(out[0].type == TYPE_PING);\
@@ -121,13 +120,13 @@ int testAck() {
     p.outgoingDataPacket = std::tr1::shared_ptr<ProtocolPacket>(new ProtocolPacket(TYPE_DATA,5,hello,5));
     
     ProtocolPacket pp = ProtocolPacket(TYPE_ACK,4);
-    out = p.packetEvent(pp,8).first;
+    out = p._packetEvent(pp,8).first;
     ASSERT(p.lastKeepAlive == 0);
     ASSERT(p.seqnum == 5);
     ASSERT(out.size() == 0);
     ASSERT(p.outgoingDataPacket);
     pp = ProtocolPacket(TYPE_ACK,5);
-    out = p.packetEvent(pp,8).first;
+    out = p._packetEvent(pp,8).first;
     ASSERT(p.lastKeepAlive == 8);
     ASSERT(p.seqnum == 6);
     ASSERT(out.size() == 0);
@@ -139,7 +138,7 @@ int testAck() {
     p.outgoingDataPacket = std::tr1::shared_ptr<ProtocolPacket>(new ProtocolPacket(TYPE_DATA,5,hello,5));   
     
     pp = ProtocolPacket(TYPE_DATA,5);
-    out = p.packetEvent(pp,8).first;
+    out = p._packetEvent(pp,8).first;
     ASSERT(p.lastKeepAlive != 8);
     ASSERT(p.seqnum == 5);
     ASSERT(out.size() == 0);
@@ -157,13 +156,13 @@ int testReadyToSend() {
     return 0;
 }
 
-int testSendData(){
+int test_sendData(){
     Protocol p;
     p.state = STATE_CONNECTED;
     p.seqnum = 1337;
     ASSERT(p.readyForData());
     std::vector<uint8_t> emptydata;
-    std::vector<ProtocolPacket> out = p.sendData(emptydata,5);
+    std::vector<ProtocolPacket> out = p._sendData(emptydata,5);
     ASSERT(out.size() == 1);
     ASSERT(out[0].seqnum == 1337);
     ASSERT(p.outgoingDataPacket->seqnum == 1337);
@@ -178,14 +177,14 @@ int testDataResending() {
     p.pingInterval = 9000; // suppress any pings
     ASSERT(p.readyForData() == true);
     std::vector<uint8_t> emptydata;
-    std::vector<ProtocolPacket> out = p.sendData(emptydata,0);
+    std::vector<ProtocolPacket> out = p._sendData(emptydata,0);
     ASSERT(out.size() == 1);
     ASSERT(out[0].seqnum == 1337);
     ASSERT(p.outgoingDataPacket);
     ASSERT(p.outgoingDataPacket->seqnum == 1337);
-    out = p.timerEvent(p.lastSendAttempt + p.sendAttemptInterval);
+    out = p._timerEvent(p.lastSendAttempt + p.sendAttemptInterval);
     ASSERT(out.size() == 0);
-    out = p.timerEvent(p.lastSendAttempt + p.sendAttemptInterval + 1);
+    out = p._timerEvent(p.lastSendAttempt + p.sendAttemptInterval + 1);
     ASSERT(out.size() == 1);
     ASSERT(p.outgoingDataPacket->seqnum == 1337);
     return 0; 
@@ -199,7 +198,7 @@ int testListening() {
     ASSERT(! p.outgoingDataPacket);
     std::vector<ProtocolPacket> out;
     ProtocolPacket pp = ProtocolPacket(TYPE_CON);
-    out = p.packetEvent(pp,50).first;
+    out = p._packetEvent(pp,50).first;
     ASSERT( p.state == STATE_CONNECTED);
     ASSERT( out.size() == 1);
     ASSERT( out[0].type == TYPE_CONACK);
@@ -210,7 +209,7 @@ int testConnecting() {
     std::vector<ProtocolPacket> out;
     Protocol p;
     p.outgoingDataPacket = std::tr1::shared_ptr<ProtocolPacket>(new ProtocolPacket(TYPE_DATA,5,NULL,0));
-    out = p.connect(0);
+    out = p._connect(0);
     ASSERT(p.state == STATE_CONNECTING);
     ASSERT(! p.outgoingDataPacket);
     
@@ -219,7 +218,7 @@ int testConnecting() {
     
     ProtocolPacket pp(TYPE_CONACK);
     
-    out = p.packetEvent(pp,50).first;
+    out = p._packetEvent(pp,50).first;
     ASSERT(p.state == STATE_CONNECTED);
     ASSERT(out.size() == 0);
     
@@ -233,7 +232,7 @@ int testConnect() {
     
     uint64_t t = 0;
     a.listen();
-    std::vector<ProtocolPacket> fora = b.connect(t);
+    std::vector<ProtocolPacket> fora = b._connect(t);
     std::vector<ProtocolPacket> forb;
     
     std::vector<ProtocolPacket> out;
@@ -243,20 +242,20 @@ int testConnect() {
     for( int i = 0;  i < 1000 ; i++) {
         for (std::vector<ProtocolPacket>::iterator it = fora.begin() ; it != fora.end() ; it++ ) {
             packetTypes.insert(it->type);
-            out = a.packetEvent(*it,t).first;
+            out = a._packetEvent(*it,t).first;
             forb.insert(forb.end(),out.begin(),out.end()); 
         }
         fora.clear();
         for (std::vector<ProtocolPacket>::iterator it = forb.begin() ; it != forb.end() ; it++ ) {
             packetTypes.insert(it->type);
-            out = b.packetEvent(*it,t).first;
+            out = b._packetEvent(*it,t).first;
             fora.insert(fora.end(),out.begin(),out.end());
         }
         forb.clear();
         
-        out = a.timerEvent(t);
+        out = a._timerEvent(t);
         forb.insert(forb.end(),out.begin(),out.end());
-        out = b.timerEvent(t);
+        out = b._timerEvent(t);
         fora.insert(fora.end(),out.begin(),out.end());
         
         t += 1;
@@ -270,19 +269,19 @@ int testConnect() {
     ASSERT(packetTypes.find(TYPE_PING) != packetTypes.end());
     
     for ( int i = 0; i < 10000 ; i++) {
-        a.timerEvent(t);
-        b.timerEvent(t);
+        a._timerEvent(t);
+        b._timerEvent(t);
         t += 1;
     }
     ASSERT(a.state == STATE_UNINIT);
     ASSERT(b.state == STATE_UNINIT);
     
-    b.connect(t);
+    b._connect(t);
     ASSERT(b.state == STATE_CONNECTING);
-    b.timerEvent(t);
+    b._timerEvent(t);
     ASSERT(b.state == STATE_CONNECTING);
     for(int i = 0; i < 10000 ; i++) {
-        b.timerEvent(t);
+        b._timerEvent(t);
         t += 1;
     }
     ASSERT(b.state == STATE_UNINIT);
@@ -298,7 +297,7 @@ int testRecoverLost() {
     
     uint64_t t = 0;
     a.listen();
-    std::vector<ProtocolPacket> fora = b.connect(t);
+    std::vector<ProtocolPacket> fora = b._connect(t);
     std::vector<ProtocolPacket> forb;
     
     std::vector<ProtocolPacket> out;
@@ -311,18 +310,18 @@ int testRecoverLost() {
     while (loopCounter < 500000) {
         t += 1;
         if (asentCount < 500 && a.readyForData()) {
-            out = a.sendData("foo",t);
+            out = a._sendData("foo",t);
             forb.insert(forb.end(),out.begin(),out.end());
             asentCount += 1;
         }
            
         if (bsentCount < 1000 && b.readyForData()) {
-            out = b.sendData("bar",t);
+            out = b._sendData("bar",t);
             fora.insert(fora.end(),out.begin(),out.end());
             bsentCount += 1;
         }
         
-        if (loopCounter > 10) { //start dropping packets after connection is up
+        if (loopCounter > 10) { //start dropping packets after _connection is up
             if  (((loopCounter % 8) == 0) && fora.size() ) {
                 fora.pop_back();
             }
@@ -335,7 +334,7 @@ int testRecoverLost() {
         // drop some more packets by not accepting data arbitrarily
         for (std::vector<ProtocolPacket>::iterator it = fora.begin() ; it != fora.end() ; it++ ) {
             std::pair<std::vector<ProtocolPacket>,std::vector<uint8_t> > eventResult;
-            eventResult = a.packetEvent(*it,t,true);
+            eventResult = a._packetEvent(*it,t,true);
             out = eventResult.first;
             std::string gotData(eventResult.second.begin(),eventResult.second.end());
             arecieved += gotData;
@@ -345,7 +344,7 @@ int testRecoverLost() {
         fora.clear();
         for (std::vector<ProtocolPacket>::iterator it = forb.begin() ; it != forb.end() ; it++ ) {
             std::pair<std::vector<ProtocolPacket>,std::vector<uint8_t> > eventResult;
-            eventResult = b.packetEvent(*it,t,true);
+            eventResult = b._packetEvent(*it,t,true);
             out = eventResult.first;
             std::string gotData(eventResult.second.begin(),eventResult.second.end());
             brecieved += gotData;
@@ -353,9 +352,9 @@ int testRecoverLost() {
         }
         forb.clear();
         
-        out = a.timerEvent(t);
+        out = a._timerEvent(t);
         forb.insert(forb.end(),out.begin(),out.end());
-        out = b.timerEvent(t);
+        out = b._timerEvent(t);
         fora.insert(fora.end(),out.begin(),out.end());
         
         if (asentCount == 500 && bsentCount == 1000 && !a.outgoingDataPacket && !b.outgoingDataPacket) {
@@ -382,65 +381,35 @@ int testConnectTransport() {
         
     Protocol a;
     Protocol b;
-    PacketBuilder pba;
-    PacketBuilder pbb;
     
     std::string fora_raw;
     std::string forb_raw;
     
     uint64_t t = 0;
     a.listen();
-    std::vector<ProtocolPacket> fora = b.connect(t);
-    for (std::vector<ProtocolPacket>::iterator it = fora.begin() ; it != fora.end() ; it++ ) {
-        fora_raw += encodePacket_s(*it);
-    }
-    std::vector<ProtocolPacket> forb;
+    std::vector<uint8_t> fora = b.connect(t);
+    std::vector<uint8_t> forb;
     
     
-    std::vector<ProtocolPacket> out;
+   std::vector<uint8_t> out;
     
-    std::set<PacketType> packetTypes;
     
     for( int i = 0;  i < 1000 ; i++) {
-        fora = pba.addData(fora_raw);
-        for (std::vector<ProtocolPacket>::iterator it = fora.begin() ; it != fora.end() ; it++ ) {
-            packetTypes.insert(it->type);
-            out = a.packetEvent(*it,t).first;
-            forb_raw = "";
-            for (std::vector<ProtocolPacket>::iterator it = out.begin() ; it != out.end() ; it++ ) {
-                forb_raw += encodePacket_s(*it);
-            }
-        }
+        out = a.dataEvent(fora,t).first;
         fora.clear();
-        forb = pbb.addData(forb_raw);
-        for (std::vector<ProtocolPacket>::iterator it = forb.begin() ; it != forb.end() ; it++ ) {
-            packetTypes.insert(it->type);
-            out = b.packetEvent(*it,t).first;
-            fora_raw = "";
-            for (std::vector<ProtocolPacket>::iterator it = out.begin() ; it != out.end() ; it++ ) {
-                fora_raw += encodePacket_s(*it);
-            }
-        }
+        forb.insert(forb.end(),out.begin(),out.end());
+        fora = b.dataEvent(forb,t).first;
         forb.clear();
-        
         out = a.timerEvent(t);
-        for (std::vector<ProtocolPacket>::iterator it = out.begin() ; it != out.end() ; it++ ) {
-            forb_raw += encodePacket_s(*it);
-        }
+        forb.insert(forb.end(),out.begin(),out.end());
         out = b.timerEvent(t);
-        for (std::vector<ProtocolPacket>::iterator it = out.begin() ; it != out.end() ; it++ ) {
-            forb_raw += encodePacket_s(*it);
-        }
-        
+        fora.insert(fora.end(),out.begin(),out.end());
         t += 1;
     }
     
     ASSERT(a.state == STATE_CONNECTED);
     ASSERT(b.state == STATE_CONNECTED);
     
-    ASSERT(packetTypes.find(TYPE_CON) != packetTypes.end());
-    ASSERT(packetTypes.find(TYPE_CONACK) != packetTypes.end());
-    ASSERT(packetTypes.find(TYPE_PING) != packetTypes.end());
     
     for ( int i = 0; i < 10000 ; i++) {
         a.timerEvent(t);
@@ -518,7 +487,7 @@ int main (int argc, char const* argv[]) {
     TEST(testPinging);
     TEST(testAck);
     TEST(testReadyToSend);
-    TEST(testSendData);
+    TEST(test_sendData);
     TEST(testDataResending);
     TEST(testListening);
     TEST(testConnecting);

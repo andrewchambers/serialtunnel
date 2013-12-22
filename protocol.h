@@ -35,22 +35,47 @@ class ProtocolPacket {
 
 };
 
+class PacketBuilder {
+    
+    public:
+       std::vector<ProtocolPacket> addData(uint8_t * p,int sz);
+       std::vector<ProtocolPacket> addData(const std::vector<uint8_t> & data);
+       std::vector<ProtocolPacket> addData(const std::string & data);
+    
+    private:
+        std::vector<uint8_t> buffered;
+};
+
+
 class Protocol {
     
     public: 
         Protocol();
-        std::vector<ProtocolPacket> timerEvent(uint64_t time);
-        std::pair<std::vector<ProtocolPacket>,std::vector<uint8_t> > packetEvent(ProtocolPacket & pPacket,uint64_t time, bool wantData = false);
-        std::vector<ProtocolPacket> sendData(std::vector<uint8_t>  data, uint64_t time);
-        std::vector<ProtocolPacket> sendData(const char * c, uint64_t time);
-        std::vector<ProtocolPacket> connect(uint64_t time);
+
+
         void listen();
         bool readyForData() const;
         ProtoState getState() const;
         
+        std::vector<uint8_t> timerEvent(uint64_t time);
+        std::pair<std::vector<uint8_t>,std::vector<uint8_t> > 
+        dataEvent(const std::vector<uint8_t> & datain,uint64_t time, bool wantData = false);
+    
+        std::vector<uint8_t> sendData(std::vector<uint8_t>  data, uint64_t time);
+        std::vector<uint8_t> sendData(const char * c, uint64_t time);
+        std::vector<uint8_t> connect(uint64_t time);    
         
         
     private:
+        
+        std::vector<ProtocolPacket> _timerEvent(uint64_t time);
+        std::pair<std::vector<ProtocolPacket>,std::vector<uint8_t> > _packetEvent(ProtocolPacket & pPacket,uint64_t time, bool wantData = false);
+    
+        std::vector<ProtocolPacket> _sendData(std::vector<uint8_t>  data, uint64_t time);
+        std::vector<ProtocolPacket> _sendData(const char * c, uint64_t time);
+        std::vector<ProtocolPacket> _connect(uint64_t time);    
+        
+    
         ProtoState state;
         uint32_t seqnum;
         uint32_t expectedDataSeqnum;
@@ -61,5 +86,19 @@ class Protocol {
         uint64_t sendAttemptInterval;
         uint64_t pingInterval;
         std::tr1::shared_ptr<ProtocolPacket> outgoingDataPacket;
+        
+        PacketBuilder pb;
+        
             
 };
+
+
+std::vector<uint8_t>
+encodePacket(const ProtocolPacket & p);
+
+std::vector<uint8_t>
+encodePackets(const std::vector<ProtocolPacket> & pkts);
+
+std::string
+encodePacket_s(const ProtocolPacket & p);
+
