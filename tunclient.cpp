@@ -12,92 +12,8 @@
 
 
 
-/* Code from ncat
- * Split a command line into an array suitable for handing to execv.
- *
- * A note on syntax: words are split on whitespace and '\' escapes characters.
- * '\\' will show up as '\' and '\ ' will leave a space, combining two
- * words.  Examples:
- * "ncat\ experiment -l -k" will be parsed as the following tokens:
- * "ncat experiment", "-l", "-k".
- * "ncat\\ -l -k" will be parsed as "ncat\", "-l", "-k"
- * See the test program, test/test-cmdline-split to see additional cases.
- */
-static char **cmdline_split(const char *cmdexec)
-{
-    const char *ptr;
-    char *cur_arg, **cmd_args;
-    int max_tokens = 0, arg_idx = 0, ptr_idx = 0;
-
-    /* Figure out the maximum number of tokens needed */
-    ptr = cmdexec;
-    while (*ptr) {
-        // Find the start of the token
-        while (('\0' != *ptr) && isspace((int) (unsigned char) *ptr))
-            ptr++;
-        if ('\0' == *ptr)
-            break;
-        max_tokens++;
-        // Find the start of the whitespace again
-        while (('\0' != *ptr) && !isspace((int) (unsigned char) *ptr))
-            ptr++;
-    }
-
-    /* The line is not empty so we've got something to deal with */
-    cmd_args = (char **) malloc(sizeof(char *) * (max_tokens + 1));
-    cur_arg = (char *) calloc(sizeof(char), strlen(cmdexec));
-    
-    if(!cmd_args || !cur_arg) {
-        std::cerr << "Out of memory. terminating." << std::endl;
-        exit(1);
-    }
-
-    /* Get and copy the tokens */
-    ptr = cmdexec;
-    while (*ptr) {
-        while (('\0' != *ptr) && isspace((int) (unsigned char) *ptr))
-            ptr++;
-        if ('\0' == *ptr)
-            break;
-
-        while (('\0' != *ptr) && !isspace((int) (unsigned char) *ptr)) {
-            if ('\\' == *ptr) {
-                ptr++;
-                if ('\0' == *ptr)
-                    break;
-
-                cur_arg[ptr_idx] = *ptr;
-                ptr_idx++;
-                ptr++;
-
-                if ('\\' != *(ptr - 1)) {
-                    while (('\0' != *ptr) && isspace((int) (unsigned char) *ptr))
-                        ptr++;
-                }
-            } else {
-                cur_arg[ptr_idx] = *ptr;
-                ptr_idx++;
-                ptr++;
-            }
-        }
-        cur_arg[ptr_idx] = '\0';
-
-        cmd_args[arg_idx] = strdup(cur_arg);
-        cur_arg[0] = '\0';
-        ptr_idx = 0;
-        arg_idx++;
-    }
-
-    cmd_args[arg_idx] = NULL;
-
-    /* Clean up */
-    free(cur_arg);
-
-    return cmd_args;
-}
-
 //more code borrowed from ncat
-void subexec(const char *cmdexec,int * childpid, int * childin,int * childout) {
+void subexec(char * cmdexec[],int * childpid, int * childin,int * childout) {
     int child_stdin[2];
     int child_stdout[2];
     int pid;
@@ -125,10 +41,8 @@ void subexec(const char *cmdexec,int * childpid, int * childin,int * childout) {
             exit(1);
         }
         
-        char ** cmdline;
-        cmdline = cmdline_split(cmdexec);
-        execv(cmdline[0],cmdline);
-        std::cerr << "error starting command " << cmdline[0] << std::endl;
+        execvp(cmdexec[0],cmdexec);
+        std::cerr << "error starting command " << cmdexec[0] << std::endl;
         exit(1);
         
 	    /* do child stuff */
@@ -332,11 +246,8 @@ main(int argc, char *argv[]) {
     int opt;
     int server = 0;
 
-    while ((opt = getopt(argc, argv, "sc:")) != -1) {
+    while ((opt = getopt(argc, argv, "s")) != -1) {
         switch (opt) {
-        case 'c':
-            subcommand = optarg;
-            break;
         case 's':
             server = 1;
             break;
@@ -353,7 +264,7 @@ main(int argc, char *argv[]) {
     Protocol p;
     
     if(!server) {
-        subexec(subcommand.c_str(),&childpid,&childin,&childout);
+        subexec(&argv[optind],&childpid,&childin,&childout);
         std::vector<uint8_t> initVec;
         initVec = p.connect(getNow());
         proxy_forever(p,initVec,childout,childin,STDIN_FILENO,STDOUT_FILENO);
@@ -374,7 +285,7 @@ main(int argc, char *argv[]) {
             
             if(p.getState() != STATE_LISTENING) {
                 std::cerr << "Connection established\n";
-                subexec(subcommand.c_str(),&childpid,&childin,&childout);
+                subexec(&argv[optind],&childpid,&childin,&childout);
                 proxy_forever(p,out,STDIN_FILENO,STDOUT_FILENO,childout,childin);
                 return 0;
             }
