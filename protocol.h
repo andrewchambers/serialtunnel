@@ -73,7 +73,7 @@ class Protocol {
     
         std::vector<ProtocolPacket> _sendData(std::vector<uint8_t>  data, uint64_t time);
         std::vector<ProtocolPacket> _sendData(const char * c, uint64_t time);
-        std::vector<ProtocolPacket> _connect(uint64_t time);    
+        std::vector<ProtocolPacket> _connect(uint64_t time);   
         
     
         ProtoState state;

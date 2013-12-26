@@ -91,7 +91,7 @@ void proxy_forever(Protocol & p, std::vector<uint8_t> & initialProtoData ,int pr
     
     bufferedProtocolData = initialProtoData;
     
-    uint8_t  buff[4096];
+    uint8_t  buff[256];
     
     
     for (;;) {
@@ -240,8 +240,6 @@ void proxy_forever(Protocol & p, std::vector<uint8_t> & initialProtoData ,int pr
 
 int
 main(int argc, char *argv[]) {
-    
-    std::string subcommand;
     
     int opt;
     int server = 0;

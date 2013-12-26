@@ -258,7 +258,7 @@ int testConnect() {
         out = b._timerEvent(t);
         fora.insert(fora.end(),out.begin(),out.end());
         
-        t += 1;
+        t += 10;
     }
     
     ASSERT(a.state == STATE_CONNECTED);
@@ -271,7 +271,7 @@ int testConnect() {
     for ( int i = 0; i < 10000 ; i++) {
         a._timerEvent(t);
         b._timerEvent(t);
-        t += 1;
+        t += 10;
     }
     ASSERT(a.state == STATE_UNINIT);
     ASSERT(b.state == STATE_UNINIT);
@@ -282,7 +282,7 @@ int testConnect() {
     ASSERT(b.state == STATE_CONNECTING);
     for(int i = 0; i < 10000 ; i++) {
         b._timerEvent(t);
-        t += 1;
+        t += 10;
     }
     ASSERT(b.state == STATE_UNINIT);
     
@@ -308,7 +308,7 @@ int testRecoverLost() {
     int bsentCount = 0;
     int loopCounter = 0;
     while (loopCounter < 500000) {
-        t += 1;
+        t += 10;
         if (asentCount < 500 && a.readyForData()) {
             out = a._sendData("foo",t);
             forb.insert(forb.end(),out.begin(),out.end());
@@ -404,7 +404,7 @@ int testConnectTransport() {
         forb.insert(forb.end(),out.begin(),out.end());
         out = b.timerEvent(t);
         fora.insert(fora.end(),out.begin(),out.end());
-        t += 1;
+        t += 10;
     }
     
     ASSERT(a.state == STATE_CONNECTED);
@@ -414,7 +414,7 @@ int testConnectTransport() {
     for ( int i = 0; i < 10000 ; i++) {
         a.timerEvent(t);
         b.timerEvent(t);
-        t += 1;
+        t += 10;
     }
     ASSERT(a.state == STATE_UNINIT);
     ASSERT(b.state == STATE_UNINIT);
@@ -425,7 +425,7 @@ int testConnectTransport() {
     ASSERT(b.state == STATE_CONNECTING);
     for(int i = 0; i < 10000 ; i++) {
         b.timerEvent(t);
-        t += 1;
+        t += 10;
     }
     ASSERT(b.state == STATE_UNINIT);
     return 0;
