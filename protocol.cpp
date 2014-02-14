@@ -42,7 +42,8 @@ Protocol::Protocol() {
     this->pingInterval = 1000;
     this->timeoutInterval = this->pingInterval * 10;
     this->lastSendAttempt = 0;
-    this->sendAttemptInterval = 1000;
+    this->backoff = 0;
+    this->sendAttemptInterval = 500;
 }
 
 ProtoState Protocol::getState() const {
@@ -72,8 +73,9 @@ std::vector<ProtocolPacket> Protocol::_timerEvent(uint64_t now) {
         
         
         if (this->outgoingDataPacket) {
-            if (now - this->lastSendAttempt > this->sendAttemptInterval) {
+            if (now - this->lastSendAttempt > (this->sendAttemptInterval + this->backoff )) {
                 this->lastSendAttempt = now;
+                this->backoff += 10;
                 ret.push_back(*(this->outgoingDataPacket));
             }
         }
@@ -94,6 +96,14 @@ Protocol::_packetEvent(ProtocolPacket & packet,uint64_t now,bool wantData) {
                 this->outgoingDataPacket.reset();
                 this->seqnum += 1;
                 this->lastKeepAlive = now;
+                if(this->backoff == 0) {
+                    uint64_t interval = (now - this->lastSendAttempt) + 50;
+                    this->sendAttemptInterval = interval;
+                }
+                this->backoff = 0;
+            } else if (packet.seqnum < this->outgoingDataPacket->seqnum) {
+                //Got an ack for an old packet, i guess sendAttemptInterval is too high.
+                this->sendAttemptInterval += 10;
             }
         }
     }
@@ -404,7 +414,6 @@ encodePacket(const ProtocolPacket & p) {
     uint32_t checksum = checksumFunc(ret.begin(),ret.end());
     
     
-    
     for(int i = 0; i < 4 ; i++) {
         uint8_t x = (checksum) &  0xff;
         ret.insert(ret.begin(),x);
@@ -420,5 +429,4 @@ encodePacket(const ProtocolPacket & p) {
     return ret;
         
 }
-
 
